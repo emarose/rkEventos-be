@@ -1,6 +1,5 @@
 import { NextFunction, Request, Response } from "express";
 import { Order } from "../interfaces/orders.interface";
-import { OrderProduct } from "../interfaces/orderProduct.interface";
 const db = require("../../database/db.js");
 
 export async function add(
@@ -38,12 +37,13 @@ export async function add(
   });
 
   await Promise.all(promises);
-  await db.query(
-    "INSERT INTO event_order (event_id, order_id) VALUES ($1, $2)",
+  let data = await db.query(
+    "INSERT INTO event_order (event_id, order_id) VALUES ($1, $2) RETURNING order_id",
     [event_id, orderId]
   );
 
-  return res.json("ok");
+  return res.json(data.rows[0]);
+
   /* for (let i = 0; i < orderProducts.length; i++) {
     const order = orderProducts[i];
     const product_id = order.product.product_id;
@@ -93,10 +93,24 @@ export async function getById(req: Request, res: Response): Promise<Response> {
   Params: id
   Endpoint: http://{URL}/orders/getById/1
   */
+
   const order_id = req.params.id;
-  const query = await db.query("SELECT * FROM order WHERE order_id = $1", [
-    order_id,
-  ]);
+  const query = await db.query(
+    `
+    SELECT o.order_id, o.payment_method, json_agg(json_build_object('description', p.description, 'price', TRIM(to_char(p.price, 'FM$999G999D00')), 'quantity', op.quantity)) AS products, 
+    TRIM(to_char(SUM(p.price * op.quantity), 'FM$999G999D00')) AS order_total,
+    CASE WHEN o.discount <> 0 THEN TRIM(to_char((SUM(p.price * op.quantity) - o.discount), 'FM$999G999D00')) ELSE TRIM(to_char(SUM(p.price * op.quantity), 'FM$999G999D00')) END AS discounted_order_total,
+    CASE WHEN o.discount <> 0 THEN TRIM(to_char(o.discount, 'FM$999G999D00')) ELSE NULL END AS discount,
+    e.description AS event_description, e.event_date, TRIM(to_char(cost, 'FM$999G999D00')) AS cost, e.address, e.event_id
+    FROM orders o
+    JOIN event e ON o.event_id = e.event_id
+    JOIN order_product op ON o.order_id = op.order_id
+    JOIN product p ON op.product_id = p.product_id
+    WHERE o.order_id = $1
+    GROUP BY o.order_id, e.description, e.event_date, e.cost, e.address, e.event_id, o.payment_method, o.discount;    
+    `,
+    [order_id]
+  );
   let result: Order = query.rows;
   return res.json(result);
 }
@@ -176,9 +190,10 @@ export async function deleteOrder(
   req: Request,
   res: Response
 ): Promise<Response> {
-  const order_id = req.params.id;
+  const { order_id } = req.params;
+
   await db.query(
-    "DELETE FROM order WHERE order_id = $1",
+    "DELETE FROM orders WHERE order_id = $1",
     [order_id],
     (err: any, results: Response) => {
       if (err) throw err;

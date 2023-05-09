@@ -3,6 +3,7 @@ var router = express.Router();
 const eventsController = require("../controllers/events.controller");
 
 router.get("/", eventsController.getAll);
+router.get("/getLastEvents", eventsController.getLastEvents);
 router.get("/getLabels", eventsController.getLabels);
 router.get("/getById/:id", eventsController.getById);
 router.put("/:id", eventsController.update);
