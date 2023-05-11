@@ -19,6 +19,7 @@ export async function add(
   );
   return res.json(response.rows);
 }
+
 export async function getAll(req: Request, res: Response): Promise<Response> {
   const rows = await db.query(
     "SELECT product_id, description, TRIM(to_char(price, 'FM$999G999D00')) AS price FROM product"
@@ -32,6 +33,37 @@ export async function getById(req: Request, res: Response): Promise<Response> {
   const query = await db.query("SELECT * FROM product WHERE product_id = $1", [
     product_id,
   ]);
+  let result: Product = query.rows;
+  return res.json(result);
+}
+
+export async function getPopularProducts(req: Request, res: Response): Promise<Response> {
+  const product_id = req.params.id;
+  const query = await db.query(`
+  
+  SELECT
+    p.product_id,
+    p.description,
+    p.price,
+    COUNT(op.order_id) AS quantity,
+    p.price * COUNT(op.order_id) AS profits,
+    TRIM(to_char( p.price * COUNT(op.order_id), 'FM$999G999D00')) AS profits_currency
+FROM
+    product p
+JOIN
+    order_product op ON p.product_id = op.product_id
+JOIN
+    event_order eo ON eo.order_id = op.order_id
+GROUP BY
+    p.product_id,
+    p.description,
+    p.price
+ORDER BY
+    COUNT(op.order_id) DESC
+LIMIT 3;
+  
+    `
+  );
   let result: Product = query.rows;
   return res.json(result);
 }
