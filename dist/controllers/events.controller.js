@@ -1,49 +1,45 @@
-import { NextFunction, Request, Response } from "express";
-import { Event } from "../interfaces/events.interface";
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.deleteEvent = exports.update = exports.getById = exports.getLastEvents = exports.getLabels = exports.getAll = exports.add = void 0;
 const db = require("../../database/db.js");
-
-export async function add(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<Response> {
-  const { description, address, cost, event_date }: Event = req.body;
-  const response = await db.query(
-    "INSERT INTO event(description, address, cost, event_date) VALUES ($1, $2, $3, $4)",
-    [description, address, cost, event_date],
-    (err: any, res: Response) => {
-      if (err) return next(err);
-      res.send(res);
-    }
-  );
-  return res.json(response.rows);
+function add(req, res, next) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { description, address, cost, event_date } = req.body;
+        const response = yield db.query("INSERT INTO event(description, address, cost, event_date) VALUES ($1, $2, $3, $4)", [description, address, cost, event_date], (err, res) => {
+            if (err)
+                return next(err);
+            res.send(res);
+        });
+        return res.json(response.rows);
+    });
 }
-
-export async function getAll(req: Request, res: Response): Promise<Response> {
-  const rows = await db.query(
-    "SELECT event_id, description, address, TRIM(to_char(cost, 'FM$999G999D00')) AS cost, event_date FROM event"
-  );
-
-  return res.json(rows);
+exports.add = add;
+function getAll(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const rows = yield db.query("SELECT event_id, description, address, TRIM(to_char(cost, 'FM$999G999D00')) AS cost, event_date FROM event");
+        return res.json(rows);
+    });
 }
-
-export async function getLabels(
-  req: Request,
-  res: Response
-): Promise<Response> {
-  const rows = await db.query(
-    "SELECT event_id, event_date, description FROM event"
-  );
-
-  return res.json(rows);
+exports.getAll = getAll;
+function getLabels(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const rows = yield db.query("SELECT event_id, event_date, description FROM event");
+        return res.json(rows);
+    });
 }
-
-export async function getLastEvents(
-  req: Request,
-  res: Response
-): Promise<Response> {
-  const rows = await db.query(
-    `
+exports.getLabels = getLabels;
+function getLastEvents(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const rows = yield db.query(`
     WITH discounted_totals AS (
       SELECT
           e.event_id,
@@ -121,15 +117,15 @@ export async function getLastEvents(
             10
     ) AS main_query
     LEFT JOIN discounted_totals dt ON main_query.event_id = dt.event_id;
-`
-  );
-  return res.json(rows);
+`);
+        return res.json(rows);
+    });
 }
-
-export async function getById(req: Request, res: Response): Promise<Response> {
-  const event_id = req.params.id;
-  const query = await db.query(
-    `
+exports.getLastEvents = getLastEvents;
+function getById(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const event_id = req.params.id;
+        const query = yield db.query(`
     WITH discounted_totals AS (
       SELECT
           e.event_id,
@@ -219,53 +215,37 @@ export async function getById(req: Request, res: Response): Promise<Response> {
   ) main_query
   JOIN discounted_totals dt ON main_query.event_id = dt.event_id;
   
-    `
-    ,
-    [event_id]
-  );
-
-  let result: Event = query.rows;
-  return res.json(result);
+    `, [event_id]);
+        let result = query.rows;
+        return res.json(result);
+    });
 }
-
-export async function update(req: Request, res: Response): Promise<Response> {
-  const { description, address, cost }: Event = req.body;
-  const event_id = req.params.id;
-
-  const event_date = new Date(req.body.event_date).toISOString().split("T")[0];
-
-  await db.query(
-    "UPDATE event SET description = $1, address = $2, cost = $3, event_date = $4 WHERE event_id = $5",
-    [description, address, cost, event_date, event_id],
-    (err: any, results: Response) => {
-      if (err) throw err;
-    }
-  );
-  return res.status(200).send(`Modified with ID: ${event_id}`);
+exports.getById = getById;
+function update(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { description, address, cost } = req.body;
+        const event_id = req.params.id;
+        const event_date = new Date(req.body.event_date).toISOString().split("T")[0];
+        yield db.query("UPDATE event SET description = $1, address = $2, cost = $3, event_date = $4 WHERE event_id = $5", [description, address, cost, event_date, event_id], (err, results) => {
+            if (err)
+                throw err;
+        });
+        return res.status(200).send(`Modified with ID: ${event_id}`);
+    });
 }
-
-export async function deleteEvent(
-  req: Request,
-  res: Response
-): Promise<Response> {
-  const event_id = req.params.id;
-
-  await db.query(
-    "DELETE FROM orders WHERE event_id = $1",
-    [event_id],
-    (err: any, results: Response) => {
-      if (err) throw err;
-    }
-  );
-
-  await db.query(
-    "DELETE FROM event WHERE event_id = $1",
-    [event_id],
-    (err: any, results: Response) => {
-      if (err) throw err;
-    }
-  );
-
-
-  return res.status(200).send(`Deleted with ID: ${event_id}`);
+exports.update = update;
+function deleteEvent(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const event_id = req.params.id;
+        yield db.query("DELETE FROM orders WHERE event_id = $1", [event_id], (err, results) => {
+            if (err)
+                throw err;
+        });
+        yield db.query("DELETE FROM event WHERE event_id = $1", [event_id], (err, results) => {
+            if (err)
+                throw err;
+        });
+        return res.status(200).send(`Deleted with ID: ${event_id}`);
+    });
 }
+exports.deleteEvent = deleteEvent;

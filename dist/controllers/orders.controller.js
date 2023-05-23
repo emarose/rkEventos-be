@@ -1,0 +1,160 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.deleteOrder = exports.update = exports.getByEventId = exports.getById = exports.getAll = exports.add = void 0;
+const db = require("../../database/db.js");
+function add(req, res, next) {
+    return __awaiter(this, void 0, void 0, function* () {
+        /*
+        Inserts a new order and creates the relationship between the order and the event in the event_order table.
+        Body: event_id, orderProduct[product_id, quantity], discount, payment_method
+        Endpoint: http://{URL}/orders/add
+        */
+        const event_id = req.body.event_id;
+        const orderProducts = req.body.orderProducts;
+        const { discount, payment_method } = req.body;
+        // Insert the order
+        const orderResult = yield db.query("INSERT INTO orders(discount, payment_method, event_id) VALUES ($1, $2, $3) RETURNING order_id", [discount, payment_method, event_id]);
+        const orderId = orderResult.rows[0].order_id;
+        const promises = orderProducts.map((order) => __awaiter(this, void 0, void 0, function* () {
+            const product_id = order.product.product_id;
+            const quantity = order.quantity;
+            yield db.query("INSERT INTO order_product (order_id, product_id, quantity) VALUES ($1, $2, $3)", [orderId, product_id, quantity]);
+        }));
+        yield Promise.all(promises);
+        let data = yield db.query("INSERT INTO event_order (event_id, order_id) VALUES ($1, $2) RETURNING order_id", [event_id, orderId]);
+        return res.json(data.rows[0]);
+        /* for (let i = 0; i < orderProducts.length; i++) {
+          const order = orderProducts[i];
+          const product_id = order.product.product_id;
+          const quantity = order.quantity;
+      
+          await db.query(
+            "INSERT INTO order_product (order_id, product_id, quantity) VALUES ($1, $2, $3)",
+            [orderId, product_id, quantity]
+        } */
+        // Insert the order_product
+        /*   await db.query(
+          "INSERT INTO order_product (order_id, product_id, quantity) VALUES ($1, $2, $3)",
+          [orderId, orderProducts.product.product_id, orderProducts.quantity]
+        ); */
+        // Insert the event_order
+    });
+}
+exports.add = add;
+function getAll(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        /*
+        Returns all orders
+        Endpoint: http://{URL}/orders/
+        */
+        const query = yield db.query(`
+    SELECT order_details.order_id, order_details.event_name, order_details.payment_method,
+    order_details.product_name, order_details.quantity, order_details.product_price, order_details.total, order_details.order_total
+    FROM (
+    SELECT orders.order_id, event.description as event_name, orders.payment_method,
+    product.description as product_name, product.price as product_price, order_product.quantity, order_product.quantity * product.price AS total,
+    SUM(order_product.quantity * product.price) OVER(PARTITION BY orders.order_id) AS order_total
+    FROM orders
+    JOIN event ON orders.event_id = event.event_id
+    JOIN order_product ON orders.order_id = order_product.order_id
+    JOIN product ON order_product.product_id = product.product_id
+    ) AS order_details`);
+        let result = query.rows;
+        return res.json(result);
+    });
+}
+exports.getAll = getAll;
+function getById(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        /*
+        Returns all orders that are associated with the specified order_id
+        Params: id
+        Endpoint: http://{URL}/orders/getById/1
+        */
+        const order_id = req.params.id;
+        const query = yield db.query(`
+    SELECT o.order_id, o.payment_method, json_agg(json_build_object('description', p.description, 'price', TRIM(to_char(p.price, 'FM$999G999D00')), 'quantity', op.quantity)) AS products, 
+    TRIM(to_char(SUM(p.price * op.quantity), 'FM$999G999D00')) AS order_total,
+    CASE WHEN o.discount <> 0 THEN TRIM(to_char((SUM(p.price * op.quantity) - o.discount), 'FM$999G999D00')) ELSE TRIM(to_char(SUM(p.price * op.quantity), 'FM$999G999D00')) END AS discounted_order_total,
+    CASE WHEN o.discount <> 0 THEN TRIM(to_char(o.discount, 'FM$999G999D00')) ELSE NULL END AS discount,
+    e.description AS event_description, e.event_date, TRIM(to_char(cost, 'FM$999G999D00')) AS cost, e.address, e.event_id
+    FROM orders o
+    JOIN event e ON o.event_id = e.event_id
+    JOIN order_product op ON o.order_id = op.order_id
+    JOIN product p ON op.product_id = p.product_id
+    WHERE o.order_id = $1
+    GROUP BY o.order_id, e.description, e.event_date, e.cost, e.address, e.event_id, o.payment_method, o.discount;    
+    `, [order_id]);
+        let result = query.rows;
+        return res.json(result);
+    });
+}
+exports.getById = getById;
+function getByEventId(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        /*
+        Returns all orders that are associated with the specified event,
+        by joining the orders and event_order tables on their respective ID and order ID columns,
+        and filtering the results by the specified event ID.
+        Params: event_id
+        Endpoint: http://{URL}/orders/getByEventId/1
+        */
+        const event_id = req.params.event_id;
+        const response = yield db.query(`SELECT *
+        FROM orders
+        JOIN event_order ON orders.order_id = event_order.order_id
+        WHERE event_order.event_id = $1`, [event_id], (err, results) => {
+            if (err)
+                throw err;
+        });
+        return res.json(response);
+    });
+}
+exports.getByEventId = getByEventId;
+function update(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { purchase_date, is_annulled, payment_date, payment_status, shipping_date, shipping_address, shipping_status, customer_id, payment_method_id, shipping_method_id, sale_mode_id, discount_id, order_item_id, event_id, } = req.body;
+        const order_id = req.params.id;
+        yield db.query("UPDATE order SET purchase_date = $1, is_annulled = $2, payment_date = $3, payment_status = $4, shipping_date = $5, shipping_address = $6, shipping_status = $7, customer_id = $8, payment_method_id = $9, shipping_method_id = $10, discount_id = $11, order_item_id = $12, event_id = $13, sale_mode_id = $14 WHERE order_id = $15", [
+            purchase_date,
+            is_annulled,
+            payment_date,
+            payment_status,
+            shipping_date,
+            shipping_address,
+            shipping_status,
+            customer_id,
+            payment_method_id,
+            shipping_method_id,
+            sale_mode_id,
+            discount_id,
+            order_item_id,
+            event_id,
+        ], (err, results) => {
+            if (err)
+                throw err;
+        });
+        return res.status(200).send(`Modified with ID: ${order_id}`);
+    });
+}
+exports.update = update;
+function deleteOrder(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { order_id } = req.params;
+        yield db.query("DELETE FROM orders WHERE order_id = $1", [order_id], (err, results) => {
+            if (err)
+                throw err;
+        });
+        return res.status(200).send(`Deleted with ID: ${order_id}`);
+    });
+}
+exports.deleteOrder = deleteOrder;
