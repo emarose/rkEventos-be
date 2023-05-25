@@ -244,6 +244,27 @@ export async function update(req: Request, res: Response): Promise<Response> {
   return res.status(200).send(`Modified with ID: ${event_id}`);
 }
 
+export async function getPopularPayMethods(req: Request, res: Response): Promise<Response> {
+
+  const rows = await db.query(
+    `
+    SELECT
+    e.event_id,
+    SUM(CASE WHEN o.payment_method = 'efectivo' THEN op.quantity * p.price ELSE 0 END) AS efectivo,
+    SUM(CASE WHEN o.payment_method = 'transferencia' THEN op.quantity * p.price ELSE 0 END) AS transferencia
+FROM
+    "event" e
+    INNER JOIN "orders" o ON e.event_id = o.event_id
+    INNER JOIN "order_product" op ON o.order_id = op.order_id
+    INNER JOIN "product" p ON op.product_id = p.product_id
+GROUP BY
+    e.event_id;
+    `
+  );
+
+  return res.json(rows);
+}
+
 export async function deleteEvent(
   req: Request,
   res: Response
