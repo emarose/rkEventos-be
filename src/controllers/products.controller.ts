@@ -20,11 +20,40 @@ export async function add(
   return res.json(response.rows);
 }
 
+export async function addBulk(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response> {
+  const productsArray = req.body;
+
+  for (let index = 0; index < productsArray.length; index++) {
+    const product = productsArray[index];
+    console.log(product);
+
+    // Check if the product already exists in the table
+    const existingProduct = await db.query(
+      "SELECT * FROM product WHERE description = $1",
+      [product.description]
+    );
+
+    if (existingProduct.rows.length === 0) {
+      // Product doesn't exist, perform the insertion
+      await db.query(
+        "INSERT INTO product(description, price) VALUES ($1, $2)",
+        [product.description, product.price]
+      );
+    }
+  }
+
+  return res.json("Bulk insertion successful");
+}
+
 export async function getAll(req: Request, res: Response): Promise<Response> {
   const rows = await db.query(
-    "SELECT product_id, description, TRIM(to_char(price, 'FM$999G999D00')) AS price FROM product"
+    "SELECT product_id, description, TRIM(to_char(price, 'FM$999G999D00')) AS price FROM product ORDER BY description ASC"
   );
-  //const rows = await db.query("SELECT * FROM product");
+
   return res.json(rows);
 }
 

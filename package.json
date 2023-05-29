@@ -9,7 +9,7 @@
     "dev": "nodemon --exec ts-node src/server.ts"
   },
   "engines": {
-    "node": "v14.17.5"
+    "node": "18.13.0"
   },
   "dependencies": {
     "blob-stream": "^0.1.3",

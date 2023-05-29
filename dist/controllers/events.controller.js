@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteEvent = exports.update = exports.getById = exports.getLastEvents = exports.getLabels = exports.getAll = exports.add = void 0;
+exports.deleteEvent = exports.getPopularPayMethods = exports.update = exports.getById = exports.getLastEvents = exports.getLabels = exports.getAll = exports.add = void 0;
 const db = require("../../database/db.js");
 function add(req, res, next) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -42,11 +42,11 @@ function getLastEvents(req, res) {
         const rows = yield db.query(`
     WITH discounted_totals AS (
       SELECT
-          e.event_id,
-          SUM(CASE
-              WHEN o.discount <> 0 THEN (p.price * op.quantity - o.discount)
-              ELSE p.price * op.quantity
-          END) AS sum_discounted_order_total
+        e.event_id,
+        SUM(CASE
+            WHEN o.discount <> 0 THEN (p.price * op.quantity - o.discount)
+            ELSE p.price * op.quantity
+        END) AS sum_discounted_order_total
       FROM orders o
       JOIN event e ON o.event_id = e.event_id
       JOIN order_product op ON o.order_id = op.order_id
@@ -54,67 +54,71 @@ function getLastEvents(req, res) {
       GROUP BY e.event_id
     )
     SELECT
-        main_query.*,
-        TRIM(to_char(dt.sum_discounted_order_total, 'FM$999G999D00')) AS grand_total,
-        GREATEST(0, dt.sum_discounted_order_total - main_query.cost) AS balance,
-        TRIM(to_char(GREATEST(0, dt.sum_discounted_order_total - main_query.cost), 'FM$999G999D00')) AS balance_currency
+      main_query.*,
+      TRIM(to_char(dt.sum_discounted_order_total, 'FM$999G999D00')) AS grand_total,
+      GREATEST(0, dt.sum_discounted_order_total - main_query.cost) AS balance,
+      CASE
+        WHEN dt.sum_discounted_order_total - main_query.cost >= 0
+        THEN TRIM(to_char(dt.sum_discounted_order_total - main_query.cost, 'FM$999G999D00'))
+        ELSE '-' || TRIM(to_char(ABS(dt.sum_discounted_order_total - main_query.cost), 'FM$999G999D00'))
+      END AS balance_currency
     FROM (
-        SELECT 
+      SELECT 
+        event.event_id,
+        event.description,
+        event.cost,
+        event.event_date,
+        event.address,
+        json_build_object('order_id', orders.order_id, 'order_total', TRIM(to_char(order_totals.order_total, 'FM$999G999D00'))) AS best_order
+      FROM 
+        event
+        JOIN event_order ON event.event_id = event_order.event_id
+        JOIN orders ON event_order.order_id = orders.order_id
+        JOIN (
+          SELECT 
+            order_id,
+            SUM(quantity * price) AS order_total
+          FROM 
+            order_product
+            JOIN product ON order_product.product_id = product.product_id
+          GROUP BY 
+            order_id
+        ) AS order_totals ON orders.order_id = order_totals.order_id
+        JOIN order_product ON orders.order_id = order_product.order_id
+        JOIN (
+          SELECT 
             event.event_id,
-            event.description,
-            event.cost,
-            event.event_date,
-            event.address,
-            json_build_object('order_id', orders.order_id, 'order_total', TRIM(to_char(order_totals.order_total, 'FM$999G999D00'))) AS best_order
-        FROM 
+            MAX(order_totals.order_total) AS best_order
+          FROM 
             event
             JOIN event_order ON event.event_id = event_order.event_id
             JOIN orders ON event_order.order_id = orders.order_id
             JOIN (
-                SELECT 
-                    order_id,
-                    SUM(quantity * price) AS order_total
-                FROM 
-                    order_product
-                    JOIN product ON order_product.product_id = product.product_id
-                GROUP BY 
-                    order_id
+              SELECT 
+                order_id,
+                SUM(quantity * price) AS order_total
+              FROM 
+                order_product
+                JOIN product ON order_product.product_id = product.product_id
+              GROUP BY 
+                order_id
             ) AS order_totals ON orders.order_id = order_totals.order_id
             JOIN order_product ON orders.order_id = order_product.order_id
-            JOIN (
-                SELECT 
-                    event.event_id,
-                    MAX(order_totals.order_total) AS best_order
-                FROM 
-                    event
-                    JOIN event_order ON event.event_id = event_order.event_id
-                    JOIN orders ON event_order.order_id = orders.order_id
-                    JOIN (
-                        SELECT 
-                            order_id,
-                            SUM(quantity * price) AS order_total
-                        FROM 
-                            order_product
-                            JOIN product ON order_product.product_id = product.product_id
-                        GROUP BY 
-                            order_id
-                    ) AS order_totals ON orders.order_id = order_totals.order_id
-                    JOIN order_product ON orders.order_id = order_product.order_id
-                GROUP BY 
-                    event.event_id
-            ) AS best_orders ON event.event_id = best_orders.event_id AND order_totals.order_total = best_orders.best_order
-        GROUP BY 
-            event.event_id,
-            event.description, 
-            event.cost,
-            event.event_date,
-            event.address,
-            orders.order_id,
-            order_totals.order_total
-        ORDER BY 
-            event.event_date DESC
-        LIMIT 
-            10
+          GROUP BY 
+            event.event_id
+        ) AS best_orders ON event.event_id = best_orders.event_id AND order_totals.order_total = best_orders.best_order
+      GROUP BY 
+        event.event_id,
+        event.description, 
+        event.cost,
+        event.event_date,
+        event.address,
+        orders.order_id,
+        order_totals.order_total
+      ORDER BY 
+        event.event_date DESC
+      LIMIT 
+        10
     ) AS main_query
     LEFT JOIN discounted_totals dt ON main_query.event_id = dt.event_id;
 `);
@@ -234,6 +238,25 @@ function update(req, res) {
     });
 }
 exports.update = update;
+function getPopularPayMethods(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const rows = yield db.query(`
+    SELECT
+    e.event_id,
+    SUM(CASE WHEN o.payment_method = 'efectivo' THEN op.quantity * p.price ELSE 0 END) AS efectivo,
+    SUM(CASE WHEN o.payment_method = 'transferencia' THEN op.quantity * p.price ELSE 0 END) AS transferencia
+FROM
+    "event" e
+    INNER JOIN "orders" o ON e.event_id = o.event_id
+    INNER JOIN "order_product" op ON o.order_id = op.order_id
+    INNER JOIN "product" p ON op.product_id = p.product_id
+GROUP BY
+    e.event_id;
+    `);
+        return res.json(rows);
+    });
+}
+exports.getPopularPayMethods = getPopularPayMethods;
 function deleteEvent(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
         const event_id = req.params.id;
