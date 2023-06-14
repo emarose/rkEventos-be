@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteProduct = exports.update = exports.getPopularProducts = exports.getById = exports.getAll = exports.add = void 0;
+exports.deleteProduct = exports.update = exports.getPopularProducts = exports.getById = exports.getAll = exports.addBulk = exports.add = void 0;
 const db = require("../../database/db.js");
 function add(req, res, next) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -23,10 +23,25 @@ function add(req, res, next) {
     });
 }
 exports.add = add;
+function addBulk(req, res, next) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const productsArray = req.body;
+        for (let index = 0; index < productsArray.length; index++) {
+            const product = productsArray[index];
+            // Check if the product already exists in the table
+            const existingProduct = yield db.query("SELECT * FROM product WHERE description = $1", [product.description]);
+            if (existingProduct.rows.length === 0) {
+                // Product doesn't exist, perform the insertion
+                yield db.query("INSERT INTO product(description, price) VALUES ($1, $2)", [product.description, product.price]);
+            }
+        }
+        return res.json("Bulk insertion successful");
+    });
+}
+exports.addBulk = addBulk;
 function getAll(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
-        const rows = yield db.query("SELECT product_id, description, TRIM(to_char(price, 'FM$999G999D00')) AS price FROM product");
-        //const rows = await db.query("SELECT * FROM product");
+        const rows = yield db.query("SELECT product_id, description, TRIM(to_char(price, 'FM$999G999D00')) AS price FROM product ORDER BY description ASC");
         return res.json(rows);
     });
 }

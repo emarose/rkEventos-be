@@ -29,7 +29,6 @@ export async function addBulk(
 
   for (let index = 0; index < productsArray.length; index++) {
     const product = productsArray[index];
-    console.log(product);
 
     // Check if the product already exists in the table
     const existingProduct = await db.query(
